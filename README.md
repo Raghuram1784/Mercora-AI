@@ -257,6 +257,40 @@ The **Merchant Dashboard** uses server-validated event and attribution data to r
 
 ---
 
+## 🔎 Example Agent Decision Trace
+
+```mermaid
+flowchart TD
+    REQ["Customer Request: Headphones under ₹5,000 for travel"]
+    INTENT["Intent Parsing: Category Headphones, Budget ≤ ₹5,000, Use Case Travel"]
+    REC["Deterministic Recommendation: Travel Headphones - BEST MATCH"]
+    AUTH["Customer Authorization: Add Travel Headphones to cart"]
+    GATE["Variant Safety Gate: Active variants detected - AI cannot guess variant"]
+    SEL["Customer Selection: Variant Red/Black selected"]
+    CART["Cart Mutation: Authorized item added - Attribution AI_RECOMMENDATION"]
+    ORDER["Internal Order Creation: Order status PENDING_PAYMENT"]
+    PAY["Razorpay Test Mode: Customer completes payment"]
+    VERIFY["Server Verification: HMAC-SHA256 signature verified"]
+    STATE["Final State: Order PAID - Cart CONVERTED"]
+    ATTR["Merchant Attribution: AI revenue in Dashboard - CommerceEvent logged"]
+
+    REQ --> INTENT
+    INTENT --> REC
+    REC --> AUTH
+    AUTH --> GATE
+    GATE --> SEL
+    SEL --> CART
+    CART --> ORDER
+    ORDER --> PAY
+    PAY --> VERIFY
+    VERIFY --> STATE
+    STATE --> ATTR
+```
+
+> **Illustrative decision trace:** This example represents Mercora's implemented AI-assisted purchase flow. The LLM interprets customer intent, while authoritative product selection, variant validation, pricing, inventory, order state and payment verification remain controlled by backend services. AI attribution is preserved through the commerce flow and recorded through the CommerceEvent audit trail.
+
+---
+
 ## ☁️ Production Deployment
 
 | Layer | Platform | Production Configuration |
