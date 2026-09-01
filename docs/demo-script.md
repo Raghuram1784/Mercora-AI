@@ -44,7 +44,7 @@ This document outlines the scene-by-scene recording script and narrative flow fo
 - **Visual**: Open Cart drawer $\rightarrow$ click Continue to Payment $\rightarrow$ show Order Created modal $\rightarrow$ launch Razorpay Test Checkout overlay $\rightarrow$ enter test credentials $\rightarrow$ complete payment $\rightarrow$ view Order Confirmation.
 
 ### Scene 6: Merchant Growth & Observability Dashboard (3:20 - 4:00)
-- **Voiceover**: *"For merchants, Mercora provides complete observability. On the Merchant Dashboard, store owners can track Paid Revenue, Paid Orders, AI-Assisted Revenue, and Accepted Growth Uplift. Every single transaction and AI interaction is recorded in an immutable CommerceEvent audit trail, providing 100% explainable attribution."*
+- **Voiceover**: *"For merchants, Mercora provides complete observability. On the Merchant Dashboard, store owners can track Paid Revenue, Paid Orders, AI-Assisted Revenue, and Accepted Growth Uplift. Every single transaction and AI interaction is recorded in an append-only CommerceEvent audit trail, providing 100% explainable attribution."*
 - **Visual**: Navigate to `/merchant`, inspect KPI cards, view dual-axis revenue trend chart, scroll through Commerce Audit Log.
 
 ### Scene 7: Bounded Money Actions & System Architecture (4:00 - 4:35)

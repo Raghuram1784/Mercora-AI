@@ -17,7 +17,7 @@
 
 **Mercora AI** is an agentic commerce platform that enables customers to discover products conversationally, receive mathematically ranked recommendations, approve personalized growth suggestions (upsells & cross-sells), and complete secure checkouts through **Razorpay Test Mode**.
 
-For merchants, Mercora provides 100% explainable AI revenue attribution, AI-assisted order tracking, accepted growth metrics, payment completion analytics, and an immutable `CommerceEvent` audit trail.
+For merchants, Mercora provides 100% explainable AI revenue attribution, AI-assisted order tracking, accepted growth metrics, payment completion analytics, and an append-only `CommerceEvent` audit trail.
 
 ---
 
@@ -128,7 +128,7 @@ The Growth Engine (`apps/backend/src/growth`) generates complementary cross-sell
 
 ## 📜 CommerceEvent Audit Trail
 
-Every critical interaction generates an immutable `CommerceEvent` row in PostgreSQL:
+Every critical interaction generates an auditable, append-only `CommerceEvent` row in PostgreSQL:
 
 ```text
 AI_RECOMMENDATION_REQUESTED ➔ AI_RECOMMENDATION_RETURNED ➔ ACCESSORY_SHOWN ➔ ACCESSORY_ACCEPTED ➔ ORDER_CREATED ➔ PAYMENT_STARTED ➔ PAYMENT_VERIFIED ➔ CART_CONVERTED
