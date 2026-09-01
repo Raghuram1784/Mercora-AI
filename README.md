@@ -83,31 +83,48 @@ Mercora creates Razorpay orders server-side (`razorpay.orders.create`) and verif
 
 ```mermaid
 flowchart TD
-    U["Customer Browser"] --> F["React 18 + Vite Frontend<br/>(Vercel)"]
-    F --> API["Express + TypeScript API<br/>(Vercel Functions, Fluid Compute sin1)"]
+    U["Customer Browser"]
+    F["React + Vite Frontend - Vercel"]
+    API["Express + TypeScript API - Vercel sin1"]
+    AG["AgentService"]
+    G["Groq - openai/gpt-oss-20b"]
+    TR["Tool Registry"]
+    SEARCH["Catalog Search"]
+    REC["Recommendation Engine"]
+    GROWTH["Upsell and Cross-Sell Engine"]
+    CART["Cart Service"]
+    ORDER["Order Service"]
+    RP["Razorpay Test Mode"]
+    VERIFY["Payment Verification"]
+    DB[(Neon PostgreSQL - Singapore)]
+    EVENTS["CommerceEvent Audit Log"]
+    DASH["Merchant Dashboard"]
 
-    API --> AG["Agent Controller / AgentService"]
-    AG --> G["Groq API<br/>(openai/gpt-oss-20b)"]
-    AG --> TR["Tool Registry"]
+    U --> F
+    F --> API
 
-    TR --> SEARCH["Catalog Search Service"]
-    TR --> REC["Deterministic Recommendation Engine"]
-    TR --> GROWTH["Upsell / Cross-Sell Growth Engine"]
-    TR --> CART["Cart Service"]
+    API --> AG
+    AG --> G
+    AG --> TR
 
-    CART --> ORDER["Order Service"]
-    ORDER --> RP["Razorpay Test Mode API"]
-    RP --> VERIFY["Payment Verification Service"]
+    TR --> SEARCH
+    TR --> REC
+    TR --> GROWTH
+    TR --> CART
 
-    SEARCH --> DB[("Neon PostgreSQL DB<br/>(Singapore Region)")]
+    CART --> ORDER
+    ORDER --> RP
+    RP --> VERIFY
+
+    SEARCH --> DB
     REC --> DB
     GROWTH --> DB
     CART --> DB
     ORDER --> DB
     VERIFY --> DB
 
-    DB --> EVENTS["CommerceEvent Audit Log"]
-    EVENTS --> DASH["Merchant Intelligence Dashboard"]
+    DB --> EVENTS
+    EVENTS --> DASH
 ```
 
 ### Core Architecture Principle
@@ -132,7 +149,25 @@ $$\text{Score} = \text{Category Match}(25) + \text{Budget Match}(25) + \text{Fea
 
 Mercora enforces a deterministic variant continuation pipeline to eliminate LLM hallucination and state drop-off during item selection:
 
-$$\text{AI Recommendation} \xrightarrow{} \text{Explicit Customer Add Intent} \xrightarrow{} \text{Backend Resolves Authoritative Product} \xrightarrow{} \text{Active Variants Detected} \xrightarrow{} \text{SELECT\_VARIANT Pending Action} \xrightarrow{} \text{Frontend Variant Modal} \xrightarrow{} \text{Customer Selects Variant} \xrightarrow{} \text{Backend Cart Validation} \xrightarrow{} \text{Item Added}$$
+```text
+AI Recommendation
+        ↓
+Explicit Customer Add Intent
+        ↓
+Backend Resolves Authoritative Product
+        ↓
+Active Variants Detected
+        ↓
+SELECT_VARIANT Pending Action
+        ↓
+Frontend Variant Modal
+        ↓
+Customer Selects Variant
+        ↓
+Backend Cart Validation
+        ↓
+Item Added to Cart
+```
 
 - **AI does not invent or guess variant IDs**: The model is barred from hallucinating color or configuration UUIDs.
 - **AI does not silently choose options**: Variant choices are never assumed without explicit customer selection.
@@ -150,7 +185,25 @@ The Growth Engine (`apps/backend/src/growth`) generates complementary cross-sell
 
 ### Server-Validated Revenue Attribution Flow
 
-$$\text{AI Recommendation} \xrightarrow{} \text{sourceEventId} \xrightarrow{} \text{AI\_RECOMMENDATION Attribution} \xrightarrow{} \text{Variant Selection} \xrightarrow{} \text{Cart Item} \xrightarrow{} \text{Internal Order} \xrightarrow{} \text{Razorpay Payment} \xrightarrow{} \text{PAYMENT\_VERIFIED} \xrightarrow{} \text{Merchant Analytics}$$
+```text
+AI Recommendation
+        ↓
+sourceEventId
+        ↓
+AI_RECOMMENDATION Attribution
+        ↓
+Variant Selection
+        ↓
+Cart Item
+        ↓
+Internal Order
+        ↓
+Razorpay Test Payment
+        ↓
+PAYMENT_VERIFIED
+        ↓
+Merchant Analytics
+```
 
 The **Merchant Dashboard** uses server-validated event and attribution data to report real-time store performance metrics:
 - **Paid Revenue**: Verified revenue from successfully completed Razorpay payments.
