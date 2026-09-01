@@ -1,0 +1,22 @@
+{
+  "name": "mercora-ai",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/frontend",
+    "apps/backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm run dev -w apps/frontend",
+    "dev:backend": "npm run dev -w apps/backend",
+    "build": "npm run build --workspaces --if-present",
+    "prisma:validate": "npx prisma validate"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "prisma": "^7.0.0",
+    "typescript": "^5.5.4",
+    "tsx": "^4.19.0"
+  }
+}

@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+:root {
+  --background: 245 40% 4%;     /* #07060C */
+  --foreground: 250 20% 98%;    /* #F8F7FC */
+  
+  --card: 255 35% 7%;           /* #0F0D18 */
+  --card-foreground: 250 20% 98%;
+  
+  --popover: 255 35% 5%;        /* #0B0912 */
+  --popover-foreground: 250 20% 98%;
+  
+  --primary: 263 90% 66%;       /* #8B5CF6 */
+  --primary-foreground: 250 20% 98%;
+  
+  --secondary: 255 12% 67%;     /* #A39CAF */
+  --secondary-foreground: 245 40% 4%;
+  
+  --muted: 255 12% 67%;
+  --muted-foreground: 255 12% 67%;
+  
+  --border: 255 10% 12%;        /* rgba(255, 255, 255, 0.08) */
+  --input: 255 10% 12%;
+  --ring: 263 90% 66%;
+  
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: 245 40% 4%;     /* #07060C */
+  --foreground: 250 20% 98%;    /* #F8F7FC */
+  
+  --card: 255 35% 7%;           /* #0F0D18 */
+  --card-foreground: 250 20% 98%;
+  
+  --popover: 255 35% 5%;        /* #0B0912 */
+  --popover-foreground: 250 20% 98%;
+  
+  --border: 255 10% 12%;        /* rgba(255, 255, 255, 0.08) */
+  --input: 255 10% 12%;
+  --ring: 263 90% 66%;
+}
+
+@theme {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+@layer base {
+  * {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+  body {
+    color: #F8F7FC;
+    overflow-x: hidden;
+    background:
+      radial-gradient(
+        circle at 18% 12%,
+        rgba(139, 92, 246, 0.20),
+        transparent 30%
+      ),
+      radial-gradient(
+        circle at 78% 18%,
+        rgba(79, 70, 229, 0.15),
+        transparent 28%
+      ),
+      radial-gradient(
+        circle at 85% 78%,
+        rgba(79, 124, 255, 0.08),
+        transparent 32%
+      ),
+      linear-gradient(
+        135deg,
+        #07060c 0%,
+        #0b0814 48%,
+        #06070d 100%
+      );
+    background-attachment: fixed;
+  }
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: rgba(18, 14, 31, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.glass-panel-strong {
+  background: rgba(20, 16, 36, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.glass-panel-hover {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel-hover:hover {
+  background: rgba(20, 16, 36, 0.9);
+  border-color: rgba(139, 92, 246, 0.3);
+  box-shadow: 0 8px 30px 0 rgba(139, 92, 246, 0.12);
+}
+
+/* Premium Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Hide scrollbars but support scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom responsive details grid layout */
+.product-details-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 1200px) {
+  .product-details-grid {
+    grid-template-columns: minmax(360px, 1.08fr) minmax(0, 0.92fr); /* Approx 54% / 46% split */
+    gap: 32px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .product-details-grid {
+    grid-template-columns: minmax(400px, 1.08fr) minmax(0, 0.92fr); /* Approx 54% / 46% split */
+    gap: 40px;
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./apps/frontend/src/*"]
+    }
+  },
+  "include": [
+    "apps/frontend/src/**/*",
+    "apps/backend/src/**/*",
+    "prisma/seed.ts"
+  ]
+}
