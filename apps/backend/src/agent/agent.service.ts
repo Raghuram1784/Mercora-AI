@@ -35,7 +35,16 @@ export class AgentService {
     }
 
     // 2. Enforce limits: max 10 history messages
-    const sanitizedHistory = history.slice(-10);
+    let sanitizedHistory = history.slice(-10);
+
+    // Remove duplicate trailing user message if history accidentally includes the current user message
+    if (
+      sanitizedHistory.length > 0 &&
+      sanitizedHistory[sanitizedHistory.length - 1].role === "user" &&
+      sanitizedHistory[sanitizedHistory.length - 1].content.trim() === message.trim()
+    ) {
+      sanitizedHistory = sanitizedHistory.slice(0, -1);
+    }
 
     // 3. Evaluate Cart Action Intent Authorization Gate
     // Check if the current user message contains explicit cart modification intent
@@ -195,6 +204,45 @@ export class AgentService {
               summary: "Add to cart blocked: Ambiguous customer intent",
             });
             continue;
+          }
+
+          // Enforce variant selection gate for products with active variants
+          if (name === "add_to_cart" && args.productId) {
+            try {
+              const prod = await ProductService.getProductById(args.productId);
+              if (prod && prod.variants && prod.variants.length > 0) {
+                const variantMatch = args.variantId && prod.variants.some((v) =>
+                  v.id === args.variantId && (
+                    cleanMsg.includes(v.name.toLowerCase()) ||
+                    cleanMsg.includes(v.sku.toLowerCase()) ||
+                    Object.values(v.attributes || {}).some((val) => typeof val === "string" && cleanMsg.includes(val.toLowerCase()))
+                  )
+                );
+
+                if (!variantMatch) {
+                  attemptedProductId = args.productId;
+                  console.log(`[AgentService] add_to_cart requires explicit user variant selection for ${args.productId}`);
+                  currentMessages.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    name,
+                    content: JSON.stringify({
+                      success: false,
+                      error: "VARIANT_REQUIRED",
+                      message: "Product contains active variants. Please ask the user to select a variant option.",
+                    }),
+                  });
+                  actions.push({
+                    tool: name,
+                    status: "failure",
+                    summary: "Add to cart requires explicit variant selection",
+                  });
+                  continue;
+                }
+              }
+            } catch (e) {
+              console.error("[AgentService] Failed to validate variant gate:", e);
+            }
           }
 
           // Enforce order creation gate at authorization level
@@ -536,24 +584,94 @@ export class AgentService {
       })
     );
 
-    // Expose pendingAction SELECT_VARIANT if variant choice is required
-    if (attemptedProductId) {
+    // Deterministic pendingAction SELECT_VARIANT Resolution
+    let targetProductIdForVariant = attemptedProductId;
+
+    if (!targetProductIdForVariant && (hasDirectIntent || isAuthorized)) {
+      const candidateList = Array.from(resolvedProductsMap.values());
+
+      if (candidateList.length === 1) {
+        targetProductIdForVariant = candidateList[0].id;
+      } else if (candidateList.length > 1) {
+        const matched = candidateList.filter((p) => {
+          const nameLower = p.name.toLowerCase();
+          return (
+            cleanMsg.includes(nameLower) ||
+            nameLower.split(" ").some((w: string) => w.length > 3 && cleanMsg.includes(w))
+          );
+        });
+        if (matched.length === 1) {
+          targetProductIdForVariant = matched[0].id;
+        }
+      }
+
+      if (!targetProductIdForVariant) {
+        try {
+          const { products: allProds } = await ProductService.getProducts({ limit: 100, offset: 0 });
+          const matchedProds = allProds.filter((p: any) => {
+            const nameLower = p.name.toLowerCase();
+            return (
+              cleanMsg.includes(nameLower) ||
+              (nameLower.split(" ").length >= 2 &&
+                cleanMsg.includes(nameLower.split(" ")[0]) &&
+                cleanMsg.includes(nameLower.split(" ")[1]))
+            );
+          });
+          if (matchedProds.length === 1) {
+            targetProductIdForVariant = matchedProds[0].id;
+          }
+        } catch (e) {
+          console.error("[AgentService] Catalog match lookup failed:", e);
+        }
+      }
+    }
+
+    if (targetProductIdForVariant) {
       try {
-        const fullProd = await ProductService.getProductById(attemptedProductId);
+        const fullProd = await ProductService.getProductById(targetProductIdForVariant);
         if (fullProd && fullProd.variants && fullProd.variants.length > 0) {
-          pendingAction = {
-            type: "SELECT_VARIANT",
-            productId: fullProd.id,
-            productName: fullProd.name,
-            variants: fullProd.variants.map((v) => ({
-              id: v.id,
-              name: v.name,
-              sku: v.sku,
-              price: v.price,
-              stock: v.stock,
-              attributes: v.attributes,
-            })),
-          };
+          const executedAdd = actions.find(
+            (a) => a.tool === "add_to_cart" && a.status === "success"
+          );
+
+          if (!executedAdd) {
+            pendingAction = {
+              type: "SELECT_VARIANT",
+              productId: fullProd.id,
+              productName: fullProd.name,
+              variants: fullProd.variants.map((v) => ({
+                id: v.id,
+                name: v.name,
+                sku: v.sku,
+                price: v.price,
+                stock: v.stock,
+                attributes: v.attributes,
+              })),
+            };
+
+            // Ensure target product is in finalProducts so frontend receives attribution & price metadata
+            const existingInFinal = finalProducts.find((p) => p.id === fullProd.id);
+            if (!existingInFinal) {
+              const rp = resolvedProductsMap.get(fullProd.id);
+              finalProducts.push({
+                id: fullProd.id,
+                name: fullProd.name,
+                brand: fullProd.brand,
+                category: fullProd.category,
+                price: fullProd.price,
+                rating: fullProd.rating,
+                imageUrl: fullProd.imageUrl,
+                hasVariants: true,
+                source: rp?.source || "recommendation",
+                aiAttributionSource: rp?.aiAttributionSource || "AI_RECOMMENDATION",
+                sourceEventId: rp?.sourceEventId,
+                rank: undefined,
+                score: undefined,
+                label: undefined,
+                reasons: undefined,
+              });
+            }
+          }
         }
       } catch (e) {
         console.error("[AgentService] Failed to build SELECT_VARIANT pendingAction:", e);

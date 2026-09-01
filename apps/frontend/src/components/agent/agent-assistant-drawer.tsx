@@ -34,6 +34,7 @@ const AIAssistantDrawerContent: React.FC<Omit<AIAssistantDrawerProps, "isOpen">>
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   
   // Track active variant selection product
   const [activeVariantProduct, setActiveVariantProduct] = useState<any | null>(null);
@@ -46,47 +47,50 @@ const AIAssistantDrawerContent: React.FC<Omit<AIAssistantDrawerProps, "isOpen">>
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const handleSendMessage = async (customMessage?: string) => {
-    const textToSend = customMessage || input;
-    if (!textToSend.trim() || loading) return;
+  const handleSendMessage = async (customMessage?: string, isRetry: boolean = false) => {
+    const textToSend = customMessage || lastFailedMessage || input;
+    if (!textToSend || !textToSend.trim() || loading) return;
 
-    setInput("");
+    if (!isRetry && !customMessage) {
+      setInput("");
+    }
     setErrorState(null);
     setLoading(true);
 
     const timestamp = Date.now();
     activeRequestTimestamp.current = timestamp;
 
-    // 1. Build and render user message
-    const userMsgId = Math.random().toString(36).substring(7);
-    const userMsg: MessageType = {
-      id: userMsgId,
-      role: "user",
-      content: textToSend,
-      timestamp,
-    };
-    setMessages((prev) => [...prev, userMsg]);
-
-    const updatedHistory: ChatHistoryItem[] = [
-      ...history,
-      { role: "user", content: textToSend },
-    ];
-    setHistory(updatedHistory);
+    // 1. Build and render user message (avoiding duplicate user bubble if retrying)
+    setMessages((prev) => {
+      const lastMsg = prev[prev.length - 1];
+      if (isRetry && lastMsg && lastMsg.role === "user" && lastMsg.content === textToSend) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: Math.random().toString(36).substring(7),
+          role: "user",
+          content: textToSend,
+          timestamp,
+        },
+      ];
+    });
 
     console.log("[Agent Debug] Outbound Payload:", {
       message: textToSend,
       customerId,
       cartId,
-      historyLength: updatedHistory.length,
+      historyLength: history.length,
     });
 
     try {
-      // 2. Query API
+      // 2. Query API with PRIOR completed conversation turns only
       const res = await AgentService.sendMessage({
         message: textToSend,
         customerId,
         cartId,
-        history: updatedHistory,
+        history, // PRIOR completed turns
       });
 
       // Ignore stale request callbacks
@@ -103,6 +107,8 @@ const AIAssistantDrawerContent: React.FC<Omit<AIAssistantDrawerProps, "isOpen">>
         actionsCount: res.data.actions?.length || 0,
       });
 
+      setLastFailedMessage(null);
+
       // 3. Render Assistant Response Bubble
       const assistantMsgId = Math.random().toString(36).substring(7);
       const assistantMsg: MessageType = {
@@ -116,7 +122,12 @@ const AIAssistantDrawerContent: React.FC<Omit<AIAssistantDrawerProps, "isOpen">>
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-      setHistory((prev) => [...prev, { role: "assistant", content: res.data.message }]);
+      // Update history with BOTH current user message and assistant response
+      setHistory((prev) => [
+        ...prev,
+        { role: "user" as const, content: textToSend },
+        { role: "assistant" as const, content: res.data.message },
+      ].slice(-20));
 
       if (res.data.products) {
         setRecommendedProducts(res.data.products);
@@ -141,6 +152,7 @@ const AIAssistantDrawerContent: React.FC<Omit<AIAssistantDrawerProps, "isOpen">>
     } catch (err: any) {
       if (activeRequestTimestamp.current === timestamp) {
         console.error("Agent drawer chat request failed:", err);
+        setLastFailedMessage(textToSend);
         setErrorState(err.message || "Mercora AI couldn't complete that request.");
       }
     } finally {
@@ -157,6 +169,7 @@ const AIAssistantDrawerContent: React.FC<Omit<AIAssistantDrawerProps, "isOpen">>
     setActiveVariantProduct(null);
     setInput("");
     setErrorState(null);
+    setLastFailedMessage(null);
   };
 
   const promptSuggestions = [
@@ -259,7 +272,7 @@ const AIAssistantDrawerContent: React.FC<Omit<AIAssistantDrawerProps, "isOpen">>
                   <span>Mercora AI couldn't display this response</span>
                 </div>
                 <button
-                  onClick={() => handleSendMessage()}
+                  onClick={() => handleSendMessage(lastFailedMessage || undefined, true)}
                   className="self-start px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-[10px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-rose-500/30"
                 >
                   <RefreshCw className="h-3 w-3" />
