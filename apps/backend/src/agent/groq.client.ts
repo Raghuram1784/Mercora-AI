@@ -1,4 +1,4 @@
-import Groq from "groq-sdk";
+import { Groq } from "groq-sdk";
 import { config } from "../config/env.js";
 
 if (config.LLM_PROVIDER === "groq" && !config.GROQ_API_KEY) {

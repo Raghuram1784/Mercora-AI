@@ -16,7 +16,7 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "prisma": "^7.0.0",
-    "typescript": "^5.5.4",
+    "typescript": "5.5.4",
     "tsx": "^4.19.0"
   }
 }
