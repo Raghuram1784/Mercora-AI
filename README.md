@@ -440,6 +440,22 @@ npx tsx scratch/test-variant-continuation.ts
 npx tsx scratch/validate-product-media.ts
 ```
 
+### 🧪 Validation Evidence
+
+Mercora was validated beyond the happy-path demo:
+
+- Deterministic recommendation scenarios covering budget, category, product grounding and repeatability
+- Impossible-budget validation with no constraint violation
+- Recommendation requests that do not mutate the cart without customer authorization
+- Server-side rejection of forged AI attribution
+- CommerceEvent idempotency and deduplication validation
+- AI-assisted order attribution validation
+- Razorpay dismissal, retry and cancelled-order protection
+- Deterministic variant-continuation regression coverage
+- Product-media validation across the seeded catalog
+
+Detailed validation scripts and implementation notes are available under `scratch/` and `docs/phases/`.
+
 ---
 
 ## 🔒 Security Controls

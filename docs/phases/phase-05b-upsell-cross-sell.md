@@ -12,7 +12,7 @@ The system ensures that the merchant's revenue growth aligns strictly with custo
 ```text
 Customer Request ("Is there a better version?" / "What goes well with this?")
                ↓
-Groq Agent (Llama-3.3-70b-versatile)
+Groq Agent (openai/gpt-oss-20b)
   • Interprets customer intent
   • Invokes 'get_upsell_suggestions' or 'get_cross_sell_suggestions'
                ↓
