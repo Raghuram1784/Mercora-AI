@@ -24,6 +24,37 @@
 
 ---
 
+## ⚡ Try Mercora in 60 Seconds
+
+1. Open the [Mercora storefront](https://mercora-ai.vercel.app).
+2. Open **Mercora AI** and ask:
+   > Which headphones should I buy under ₹5000 for travel?
+3. Ask:
+   > Add the Travel Headphones to my cart
+4. Select a product variant in the deterministic variant modal and add it to the cart.
+5. Proceed to checkout using **Razorpay Test Mode**.
+6. After payment verification, open the **Merchant Dashboard** at:
+   https://mercora-ai.vercel.app/merchant
+7. Inspect the paid order, AI-assisted revenue attribution, and CommerceEvent audit trail.
+
+This single flow demonstrates conversational discovery, deterministic recommendation, explicit purchase authorization, authoritative variant selection, Razorpay payment verification, and server-validated AI revenue attribution.
+
+---
+
+## ✅ Why Mercora Clears the Track 01 Bar
+
+| Razorpay Track 01 Requirement | Mercora Evidence |
+|---|---|
+| **Explainable money actions** | Recommendation reasons, deterministic rankings, backend-authoritative prices and order totals |
+| **Bounded AI behavior** | The LLM cannot set prices, override stock, mark payments successful, or directly mutate financial state |
+| **Explicit gating** | Cart mutations, variant selection, checkout, and Razorpay payment require customer authorization |
+| **Audit trail** | Append-only `CommerceEvent` records trace recommendation, cart, order, payment and conversion events |
+| **Graceful failure recovery** | Razorpay dismissal preserves `PENDING_PAYMENT` / `CHECKOUT_PENDING` state with retry and cancel recovery paths |
+| **Merchant growth** | Upsells, cross-sells, AI-assisted orders, AI-assisted revenue and accepted growth are tracked separately |
+| **Working end-to-end build** | Public Vercel storefront, Express backend, Neon PostgreSQL and Razorpay Test Mode are deployed and functional |
+
+---
+
 ## 📌 Executive Summary & Pitch
 
 **Mercora AI** is an agentic commerce platform that enables customers to discover products conversationally, receive mathematically ranked recommendations, approve personalized growth suggestions (upsells & cross-sells), and complete secure checkouts through **Razorpay Test Mode**.
@@ -52,6 +83,12 @@ $$\text{Natural Language Intent} \xrightarrow{\text{LLM}} \text{Intent Parsing} 
 - **Razorpay executes test payments with server-side HMAC-SHA256 verification.**
 - **The CommerceEvent audit trail tracks every step for auditable merchant analytics.**
 
+### More Than a Shopping Chatbot
+
+Mercora deliberately separates probabilistic AI reasoning from deterministic commerce authority. The LLM interprets natural-language intent and explains results, while backend services own recommendation ranking, product and variant resolution, inventory checks, pricing, cart mutations, order creation, payment verification and merchant attribution.
+
+This allows Mercora to remain conversational without giving an LLM uncontrolled authority over money or transactional state.
+
 ---
 
 ## 🏆 Razorpay Buildathon Alignment (Track 01)
@@ -76,6 +113,12 @@ Mercora strictly isolates the Generative AI model from authoritative financial l
 
 ### 4. Razorpay Test Mode Integration
 Mercora creates Razorpay orders server-side (`razorpay.orders.create`) and verifies HMAC signatures using `crypto.createHmac("sha256", secret)` before performing any order state transition (`PENDING_PAYMENT` $\rightarrow$ `PAID`) or cart conversion (`CHECKOUT_PENDING` $\rightarrow$ `CONVERTED`).
+
+### 5. Graceful Failure Example
+
+If a customer closes Razorpay before completing payment, Mercora does not treat the transaction as failed or paid. The internal order remains `PENDING_PAYMENT`, the cart remains safely `CHECKOUT_PENDING`, and the customer can either retry the same payment flow or cancel checkout and return the cart to `ACTIVE`.
+
+Late verification against a cancelled order is rejected by the backend.
 
 ---
 
@@ -231,7 +274,7 @@ The **Merchant Dashboard** uses server-validated event and attribution data to r
 
 ## 🛡️ Gracefully Handled Failures & Edge Cases
 
-Mercora AI is battle-tested against real-world engineering failure modes:
+Mercora AI was validated against multiple engineering and transactional failure modes during development and deployment:
 
 1. **Database Provider Recovery**:
    Supabase connection and pooler instabilities occurred across early deployment attempts. The database architecture was migrated to Neon PostgreSQL for serverless connection stability.
@@ -303,7 +346,7 @@ Mercora-AI/
 ### Prerequisites
 - Node.js v18+ & npm
 - PostgreSQL database (Local or Neon PostgreSQL)
-- Groq API Key (`openai/gpt-oss-20b`)
+- Groq API Key, with `openai/gpt-oss-20b` configured as the AI model
 - Razorpay Test Key ID & Key Secret
 
 ### 1. Clone & Install
