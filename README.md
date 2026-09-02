@@ -16,11 +16,19 @@
 
 ## 🌐 Live Demo
 
-**Customer Storefront:** https://mercora-ai.vercel.app
+- **Customer Storefront:** https://mercora-ai.vercel.app
+- **Backend API:** https://mercora-ai-backend.vercel.app
+- **Health Check:** https://mercora-ai-backend.vercel.app/api/health
+- **Merchant Dashboard:** https://mercora-ai.vercel.app/merchant
+- **GitHub Repository:** https://github.com/Raghuram1784/Mercora-AI
 
-**Backend API:** https://mercora-ai-backend.vercel.app
+---
 
-**Health Check:** https://mercora-ai-backend.vercel.app/api/health
+## 🎥 5-Minute Pitch Video
+
+**Razorpay AI Buildathon Pitch Video:** `PITCH_VIDEO_LINK_PENDING`
+
+> The final 5-minute walkthrough demonstrates the live customer journey, bounded agent behavior, deterministic recommendation and variant safety, Razorpay Test Mode payment, server-side payment verification, graceful failure handling, AI-assisted revenue attribution and the merchant audit trail.
 
 ---
 
@@ -38,6 +46,50 @@
 7. Inspect the paid order, AI-assisted revenue attribution, and CommerceEvent audit trail.
 
 This single flow demonstrates conversational discovery, deterministic recommendation, explicit purchase authorization, authoritative variant selection, Razorpay payment verification, and server-validated AI revenue attribution.
+
+---
+
+## 📸 End-to-End Demo
+
+The following are real screenshots from the deployed Mercora AI production demo operating with Razorpay Test Mode:
+
+### 1. Customer Storefront
+
+![Mercora AI Storefront](docs/screenshots/01-storefront.png)
+
+*Production storefront where customers browse the catalog and launch the Mercora AI shopping assistant.*
+
+### 2. AI Product Recommendation
+
+![Mercora AI Recommendation](docs/screenshots/02-ai-recommendation.png)
+
+*A natural-language shopping request is converted into structured criteria and processed by Mercora's deterministic recommendation engine.*
+
+### 3. Explicit Authorization & Variant Safety
+
+![Mercora Variant Safety](docs/screenshots/03-variant-safety.png)
+
+*After the customer explicitly asks to add the product, Mercora requires an authoritative variant selection instead of allowing the AI to guess a product configuration.*
+
+### 4. Razorpay Test Payment
+
+![Razorpay Payment Success](docs/screenshots/04a-razorpay-payment-success.png)
+
+*The customer successfully completes the payment through Razorpay Test Mode.*
+
+### 5. Server-Verified Mercora Order
+
+![Mercora Verified Order](docs/screenshots/04b-payment-verified-order-confirmed.png)
+
+*Mercora verifies the Razorpay payment server-side before marking the internal order PAID and confirming the transaction.*
+
+### 6. Merchant Analytics & Attribution
+
+![Mercora Merchant Dashboard](docs/screenshots/05-merchant-dashboard.png)
+
+*The merchant dashboard shows verified commerce performance, AI-assisted attribution, paid orders, revenue, growth metrics and audit evidence.*
+
+> **End-to-end proof:** Customer intent → AI-assisted discovery → deterministic recommendation → explicit authorization → variant selection → cart → internal order → Razorpay Test payment → server verification → paid order → merchant attribution and audit trail.
 
 ---
 
@@ -85,9 +137,15 @@ $$\text{Natural Language Intent} \xrightarrow{\text{LLM}} \text{Intent Parsing} 
 
 ### More Than a Shopping Chatbot
 
-Mercora deliberately separates probabilistic AI reasoning from deterministic commerce authority. The LLM interprets natural-language intent and explains results, while backend services own recommendation ranking, product and variant resolution, inventory checks, pricing, cart mutations, order creation, payment verification and merchant attribution.
+Mercora deliberately separates probabilistic AI reasoning from deterministic commerce authority:
 
-This allows Mercora to remain conversational without giving an LLM uncontrolled authority over money or transactional state.
+1. **Groq (`openai/gpt-oss-20b`)** interprets natural-language recommendation requests into structured criteria.
+2. **RecommendationService** applies deterministic mathematical filters and ranking.
+3. **Structured product results** are returned directly to the frontend.
+4. **Explicit commerce actions** are bounded by deterministic server-side authorization and validation gates.
+5. **Clear explicit add commands** use the deterministic backend fast path without an additional LLM call.
+
+Intent-aware tool routing and deterministic terminal paths minimize unnecessary LLM calls while keeping commerce authority on the backend.
 
 ---
 
@@ -113,6 +171,11 @@ Mercora strictly isolates the Generative AI model from authoritative financial l
 
 ### 4. Razorpay Test Mode Integration
 Mercora creates Razorpay orders server-side (`razorpay.orders.create`) and verifies HMAC signatures using `crypto.createHmac("sha256", secret)` before performing any order state transition (`PENDING_PAYMENT` $\rightarrow$ `PAID`) or cart conversion (`CHECKOUT_PENDING` $\rightarrow$ `CONVERTED`).
+
+The sequence is strictly enforced:
+$$\text{Razorpay Success Overlay} \longrightarrow \text{Server HMAC-SHA256 Verification} \longrightarrow \text{Order State } \texttt{PAID} \longrightarrow \text{Cart State } \texttt{CONVERTED} \longrightarrow \text{Dashboard Analytics}$$
+
+Mercora marks an internal order `PAID` **only** after server-side signature verification succeeds.
 
 ### 5. Graceful Failure Example
 
@@ -184,7 +247,7 @@ The LLM **never** fabricates product rankings or scores out of thin air.
 
 $$\text{Score} = \text{Category Match}(25) + \text{Budget Match}(25) + \text{Feature Match}(20) + \text{Use Case Match}(15) + \text{Rating}(10) + \text{Stock}(5)$$
 
-3. **LLM** receives the ranked products alongside backend-generated reasons (`Best Match`, `Best Value`, `Strong Alternative`) and presents them conversationally.
+3. **Backend** returns structured product cards directly to the frontend with deterministic labels (`Best Match`, `Best Value`, `Strong Alternative`).
 
 ---
 
@@ -193,21 +256,21 @@ $$\text{Score} = \text{Category Match}(25) + \text{Budget Match}(25) + \text{Fea
 Mercora enforces a deterministic variant continuation pipeline to eliminate LLM hallucination and state drop-off during item selection:
 
 ```text
-AI Recommendation
+AI Recommendation (AI_RECOMMENDATION_RETURNED Event -> sourceEventId)
         ↓
-Explicit Customer Add Intent
+Explicit Customer Add Intent ("Add Travel Headphones")
         ↓
-Backend Resolves Authoritative Product
+Fast-Path Resolves Authoritative Product (0 Groq Calls)
         ↓
 Active Variants Detected
         ↓
-SELECT_VARIANT Pending Action
+SELECT_VARIANT Pending Action (sourceEventId Preserved)
         ↓
 Frontend Variant Modal
         ↓
-Customer Selects Variant
+Customer Selects Real Variant
         ↓
-Backend Cart Validation
+CartService.addCartItem (Server-Validates Attribution)
         ↓
 Item Added to Cart
 ```
@@ -215,7 +278,7 @@ Item Added to Cart
 - **AI does not invent or guess variant IDs**: The model is barred from hallucinating color or configuration UUIDs.
 - **AI does not silently choose options**: Variant choices are never assumed without explicit customer selection.
 - **Backend-authoritative data**: All product IDs, variant IDs, stock levels, and prices are fetched directly from PostgreSQL.
-- **Attribution continuity**: AI attribution (`source`, `aiAttributionSource`, `sourceEventId`) is preserved through modal configuration down to cart, order, and payment verification.
+- **Attribution continuity**: AI attribution (`source`, `aiAttributionSource`, `sourceEventId`) is server-validated via `AuditService.validateAttribution` and preserved through modal configuration down to cart, order, and payment verification. Client-side attribution claims are never blindly trusted.
 
 ---
 
@@ -229,23 +292,27 @@ The Growth Engine (`apps/backend/src/growth`) generates complementary cross-sell
 ### Server-Validated Revenue Attribution Flow
 
 ```text
-AI Recommendation
+AI_RECOMMENDATION_RETURNED (Generates sourceEventId)
         ↓
-sourceEventId
+Explicit Add Request
         ↓
-AI_RECOMMENDATION Attribution
+sourceEventId Preserved in SELECT_VARIANT
         ↓
-Variant Selection
+Variant Modal Selection
         ↓
-Cart Item
+CartService.addCartItem
         ↓
-Internal Order
+AuditService.validateAttribution (Validates Event & Product Match)
+        ↓
+Validated CartItemSource (AI_RECOMMENDATION)
+        ↓
+Internal Order Item
         ↓
 Razorpay Test Payment
         ↓
-PAYMENT_VERIFIED
+Server HMAC Verification -> PAYMENT_VERIFIED
         ↓
-Merchant Analytics
+Merchant Analytics Dashboard
 ```
 
 The **Merchant Dashboard** uses server-validated event and attribution data to report real-time store performance metrics:
@@ -326,6 +393,8 @@ Mercora AI was validated against multiple engineering and transactional failure 
    Backend execution initially ran in Washington while Neon DB was hosted in Singapore. Moving Vercel Functions to Singapore (`sin1`) placed backend compute next to the database, reducing typical deployed AI interaction latency to 2-4 seconds.
 8. **Razorpay Modal Dismissal & Late-Payment Guard**:
    Closing the Razorpay modal leaves the cart safely locked in `CHECKOUT_PENDING` and the order in `PENDING_PAYMENT`. Users can retry payment or cancel to unlock the cart. Late payment verifications for cancelled orders are rejected immediately (`INVALID_ORDER_STATUS`).
+9. **Groq Free-Tier Production Hardening**:
+   Production testing showed that repeatedly attaching the entire agent tool registry to multi-round LLM requests generated unnecessary token throughput. Mercora was optimized using intent-aware tool exposure, a six-message history window, concise response budgets, tool-free secondary synthesis where needed, terminal read-only recommendation paths, and deterministic zero-LLM explicit cart authorization paths. This reduced unnecessary model calls without weakening price, inventory, variant, cart, order, payment, attribution or authorization controls.
 
 *(Read full engineering retrospectives in [`docs/failures.md`](docs/failures.md))*
 
@@ -356,12 +425,22 @@ Mercora-AI/
 │   ├── schema.prisma     # Canonical data model (Product, Cart, Order, CommerceEvent)
 │   └── seed.ts           # Authoritative 40-product seed script
 ├── docs/
+│   ├── screenshots/      # Production demo screenshot evidence
+│   │   ├── 01-storefront.png
+│   │   ├── 02-ai-recommendation.png
+│   │   ├── 03-variant-safety.png
+│   │   ├── 04a-razorpay-payment-success.png
+│   │   ├── 04b-payment-verified-order-confirmed.png
+│   │   └── 05-merchant-dashboard.png
 │   ├── architecture.md   # Deep-dive architecture & data flows
 │   ├── ai-design.md       # Agent tool boundaries & LLM design rules
 │   ├── failures.md       # Real engineering failure retrospectives
 │   ├── demo-script.md    # 5-minute video pitch recording script
 │   └── submission-checklist.md # Razorpay Buildathon submission tracking
 ├── scratch/              # Automated validation & regression test scripts
+│   ├── test-agent-intent-gate.ts     # Intent safety gating suite (11/11 passing)
+│   ├── test-agent-token-budget.ts    # Groq token budget suite (5/5 passing)
+│   ├── test-attribution-fast-path.ts # AI attribution preservation suite (2/2 passing)
 │   ├── test-phase9-failures.ts       # Payment verification failure test suite
 │   ├── test-phase9-e2e.ts            # Purchasing flow test suite
 │   ├── test-variant-continuation.ts  # Deterministic variant continuation suite
@@ -427,6 +506,15 @@ npm run dev
 
 Execute automated regression suites:
 ```bash
+# Test agent intent safety gating (11/11 passing)
+npx tsx scratch/test-agent-intent-gate.ts
+
+# Test Groq token-budget routing & tool schema optimization (5/5 passing)
+npx tsx scratch/test-agent-token-budget.ts
+
+# Test fast-path AI attribution validation & preservation (2/2 passing)
+npx tsx scratch/test-attribution-fast-path.ts
+
 # Test payment verification failure modes, signature checks, idempotency, late verification guards
 npx tsx scratch/test-phase9-failures.ts
 
@@ -444,6 +532,9 @@ npx tsx scratch/validate-product-media.ts
 
 Mercora was validated beyond the happy-path demo:
 
+- Agent intent safety gating: 11/11 tests passing (`scratch/test-agent-intent-gate.ts`)
+- Groq token-budget routing: 5/5 tests passing (`scratch/test-agent-token-budget.ts`)
+- Fast-path AI attribution validation: 2/2 tests passing (`scratch/test-attribution-fast-path.ts`)
 - Deterministic recommendation scenarios covering budget, category, product grounding and repeatability
 - Impossible-budget validation with no constraint violation
 - Recommendation requests that do not mutate the cart without customer authorization
@@ -465,6 +556,23 @@ Detailed validation scripts and implementation notes are available under `scratc
 - **Controlled Error Payloads**: Error middleware strips stack traces in production JSON responses.
 - **Backend Pricing & Stock Validation**: All prices and stock limits are validated against PostgreSQL at checkout time.
 - **Explicit Authorization Gates**: Cart additions, variant selections, and order creations require explicit user authorization.
+
+---
+
+## ✅ Buildathon Submission Status
+
+| Item | Status |
+|---|---|
+| Track 01 implementation | ✅ Complete |
+| Production storefront | ✅ Live |
+| Production backend | ✅ Live |
+| Razorpay Test Mode integration | ✅ Verified |
+| Server-side payment verification | ✅ Verified |
+| Agent intent safety | ✅ Validated |
+| AI attribution | ✅ Server validated |
+| Graceful payment recovery | ✅ Implemented |
+| End-to-end screenshots | ✅ Added |
+| 5-minute pitch video | ⏳ Link pending final upload |
 
 ---
 
