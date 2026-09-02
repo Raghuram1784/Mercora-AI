@@ -1,6 +1,32 @@
 import { AgentService } from "../apps/backend/src/agent/agent.service.js";
+import { groq } from "../apps/backend/src/agent/groq.client.js";
 import { prisma } from "../apps/backend/src/config/database.js";
 import assert from "node:assert";
+
+// Mock Groq API calls to prevent TPD rate limit errors during regression testing
+const originalCreate = groq.chat.completions.create.bind(groq.chat.completions);
+(groq.chat.completions as any).create = async (params: any) => {
+  return {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call_mock_rec",
+              type: "function",
+              function: {
+                name: "recommend_products",
+                arguments: JSON.stringify({ category: "Headphones", maxPrice: 5000, useCases: ["travel"] }),
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+};
 
 async function runAttributionFastPathTests() {
   console.log("==================================================");
@@ -50,6 +76,7 @@ async function runAttributionFastPathTests() {
     });
 
     assert.strictEqual(res2.pendingAction?.type, "SELECT_VARIANT", "Explicit add must return SELECT_VARIANT");
+    assert(res2.pendingAction?.variants && Array.isArray(res2.pendingAction.variants), "pendingAction must use 'variants' array field");
     assert(res2.products && res2.products.length > 0, "Explicit add response must include resolved product");
     
     const targetProdCard = res2.products[0];
@@ -80,6 +107,7 @@ async function runAttributionFastPathTests() {
       });
 
       assert.strictEqual(resDirect.pendingAction?.type, "SELECT_VARIANT", "Direct add must return SELECT_VARIANT");
+      assert(resDirect.pendingAction?.variants && Array.isArray(resDirect.pendingAction.variants), "pendingAction must use 'variants' array field");
       const directProdCard = resDirect.products[0];
       console.log("Direct add product card attribution:", {
         aiAttributionSource: directProdCard.aiAttributionSource,
@@ -97,6 +125,7 @@ async function runAttributionFastPathTests() {
     console.log("  ALL FAST-PATH ATTRIBUTION TESTS PASSED (2/2)     ");
     console.log("==================================================");
   } finally {
+    (groq.chat.completions as any).create = originalCreate;
     await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
     await prisma.cart.delete({ where: { id: cart.id } });
   }

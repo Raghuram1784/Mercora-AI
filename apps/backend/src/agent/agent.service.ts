@@ -233,7 +233,7 @@ export class AgentService {
                   type: "SELECT_VARIANT",
                   productId: fullProduct.id,
                   productName: fullProduct.name,
-                  availableVariants: fullProduct.variants.map((v: any) => ({
+                  variants: fullProduct.variants.map((v: any) => ({
                     id: v.id,
                     name: v.name,
                     sku: v.sku,
