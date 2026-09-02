@@ -572,7 +572,7 @@ Detailed validation scripts and implementation notes are available under `scratc
 | AI attribution | ✅ Server validated |
 | Graceful payment recovery | ✅ Implemented |
 | End-to-end screenshots | ✅ Added |
-| 5-minute pitch video | ⏳ Link pending final upload |
+| 5-minute pitch video | ✅ Submitted |
 
 ---
 
