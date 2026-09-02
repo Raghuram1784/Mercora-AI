@@ -47,34 +47,55 @@ export class AgentService {
     }
 
     // 3. Evaluate Cart Action Intent Authorization Gate
+    // 3. Evaluate Cart Action Intent Authorization Gate
     // Check if the current user message contains explicit cart modification intent
     const cleanMsg = message.toLowerCase();
-    const hasDirectIntent = 
-      cleanMsg.includes("add") || 
-      cleanMsg.includes("cart") || 
-      cleanMsg.includes("buy") || 
-      cleanMsg.includes("take") || 
-      cleanMsg.includes("put") || 
-      cleanMsg.includes("get") ||
-      cleanMsg.includes("do it") ||
-      cleanMsg.includes("go ahead") ||
-      // Direct positive answers
-      cleanMsg === "yes" || cleanMsg === "yep" || cleanMsg === "yeah" || cleanMsg === "sure" || cleanMsg === "ok" || cleanMsg === "okay";
 
-    // Check if the last assistant message prompted for a choice/confirmation
+    // Explicit cart mutation phrases
+    const hasExplicitCartIntent = 
+      /\b(add|adds|adding|cart)\b/i.test(cleanMsg) ||
+      (cleanMsg.includes("put") && (cleanMsg.includes("in") || cleanMsg.includes("into"))) ||
+      cleanMsg.includes("go ahead and add") ||
+      cleanMsg.includes("buy this") ||
+      cleanMsg.includes("buy the");
+
+    // Short confirmation answers (valid ONLY when responding to prior assistant choice/confirmation prompt)
+    const isShortConfirmation =
+      cleanMsg === "yes" ||
+      cleanMsg === "yep" ||
+      cleanMsg === "yeah" ||
+      cleanMsg === "sure" ||
+      cleanMsg === "ok" ||
+      cleanMsg === "okay" ||
+      cleanMsg === "do it" ||
+      cleanMsg === "go ahead" ||
+      cleanMsg === "yes please" ||
+      cleanMsg === "please do";
+
+    // Check if the last assistant message explicitly prompted for a choice/confirmation
     const lastAssistantMsg = sanitizedHistory
       .filter((m) => m.role === "assistant")
       .pop()?.content?.toLowerCase() || "";
 
     const isRespondingToChoice = 
-      lastAssistantMsg.includes("choose") || 
-      lastAssistantMsg.includes("select") || 
-      lastAssistantMsg.includes("variant") || 
-      lastAssistantMsg.includes("option") ||
-      lastAssistantMsg.includes("color") ||
-      lastAssistantMsg.includes("would you like");
+      lastAssistantMsg !== "" && (
+        lastAssistantMsg.includes("would you like me to add") ||
+        lastAssistantMsg.includes("add this to your cart") ||
+        lastAssistantMsg.includes("add it to your cart") ||
+        lastAssistantMsg.includes("add the") ||
+        lastAssistantMsg.includes("to your cart") ||
+        lastAssistantMsg.includes("choose a variant") ||
+        lastAssistantMsg.includes("select a variant") ||
+        lastAssistantMsg.includes("select a color") ||
+        lastAssistantMsg.includes("select an option") ||
+        lastAssistantMsg.includes("which option") ||
+        lastAssistantMsg.includes("which variant") ||
+        lastAssistantMsg.includes("which color") ||
+        lastAssistantMsg.includes("confirm if you want to add") ||
+        lastAssistantMsg.includes("variant_required")
+      );
 
-    const isAuthorized = hasDirectIntent || isRespondingToChoice;
+    const isAuthorized = hasExplicitCartIntent || (isShortConfirmation && isRespondingToChoice);
 
     // 4. Construct message payload for Groq
     const currentMessages: any[] = [
@@ -585,96 +606,113 @@ export class AgentService {
     );
 
     // Deterministic pendingAction SELECT_VARIANT Resolution
-    let targetProductIdForVariant = attemptedProductId;
-
-    if (!targetProductIdForVariant && (hasDirectIntent || isAuthorized)) {
-      const candidateList = Array.from(resolvedProductsMap.values());
-
-      if (candidateList.length === 1) {
-        targetProductIdForVariant = candidateList[0].id;
-      } else if (candidateList.length > 1) {
-        const matched = candidateList.filter((p) => {
-          const nameLower = p.name.toLowerCase();
-          return (
-            cleanMsg.includes(nameLower) ||
-            nameLower.split(" ").some((w: string) => w.length > 3 && cleanMsg.includes(w))
-          );
-        });
-        if (matched.length === 1) {
-          targetProductIdForVariant = matched[0].id;
-        }
-      }
+    if (isAuthorized) {
+      let targetProductIdForVariant = attemptedProductId;
 
       if (!targetProductIdForVariant) {
-        try {
-          const { products: allProds } = await ProductService.getProducts({ limit: 100, offset: 0 });
-          const matchedProds = allProds.filter((p: any) => {
+        const candidateList = Array.from(resolvedProductsMap.values());
+
+        if (candidateList.length === 1) {
+          targetProductIdForVariant = candidateList[0].id;
+        } else if (candidateList.length > 1) {
+          const matched = candidateList.filter((p) => {
             const nameLower = p.name.toLowerCase();
             return (
               cleanMsg.includes(nameLower) ||
-              (nameLower.split(" ").length >= 2 &&
-                cleanMsg.includes(nameLower.split(" ")[0]) &&
-                cleanMsg.includes(nameLower.split(" ")[1]))
+              nameLower.split(" ").some((w: string) => w.length > 3 && cleanMsg.includes(w))
             );
           });
-          if (matchedProds.length === 1) {
-            targetProductIdForVariant = matchedProds[0].id;
-          }
-        } catch (e) {
-          console.error("[AgentService] Catalog match lookup failed:", e);
-        }
-      }
-    }
-
-    if (targetProductIdForVariant) {
-      try {
-        const fullProd = await ProductService.getProductById(targetProductIdForVariant);
-        if (fullProd && fullProd.variants && fullProd.variants.length > 0) {
-          const executedAdd = actions.find(
-            (a) => a.tool === "add_to_cart" && a.status === "success"
-          );
-
-          if (!executedAdd) {
-            pendingAction = {
-              type: "SELECT_VARIANT",
-              productId: fullProd.id,
-              productName: fullProd.name,
-              variants: fullProd.variants.map((v) => ({
-                id: v.id,
-                name: v.name,
-                sku: v.sku,
-                price: v.price,
-                stock: v.stock,
-                attributes: v.attributes,
-              })),
-            };
-
-            // Ensure target product is in finalProducts so frontend receives attribution & price metadata
-            const existingInFinal = finalProducts.find((p) => p.id === fullProd.id);
-            if (!existingInFinal) {
-              const rp = resolvedProductsMap.get(fullProd.id);
-              finalProducts.push({
-                id: fullProd.id,
-                name: fullProd.name,
-                brand: fullProd.brand,
-                category: fullProd.category,
-                price: fullProd.price,
-                rating: fullProd.rating,
-                imageUrl: fullProd.imageUrl,
-                hasVariants: true,
-                source: rp?.source || "recommendation",
-                aiAttributionSource: rp?.aiAttributionSource || "AI_RECOMMENDATION",
-                sourceEventId: rp?.sourceEventId,
-                rank: undefined,
-                score: undefined,
-                label: undefined,
-                reasons: undefined,
-              });
+          if (matched.length === 1) {
+            targetProductIdForVariant = matched[0].id;
+          } else if (isShortConfirmation || cleanMsg.includes("this") || cleanMsg.includes("it") || cleanMsg.includes("that") || cleanMsg.includes("item")) {
+            // Check if any candidate product is mentioned in prior history
+            const historyText = sanitizedHistory.map((m) => m.content).join(" ").toLowerCase();
+            const histCandidate = candidateList.find((p) => historyText.includes(p.name.toLowerCase()));
+            if (histCandidate) {
+              targetProductIdForVariant = histCandidate.id;
+            } else {
+              targetProductIdForVariant = candidateList[0].id;
             }
           }
         }
-      } catch (e) {
-        console.error("[AgentService] Failed to build SELECT_VARIANT pendingAction:", e);
+
+        if (!targetProductIdForVariant) {
+          try {
+            const { products: allProds } = await ProductService.getProducts({ limit: 100, offset: 0 });
+            const matchedProds = allProds.filter((p: any) => {
+              const nameLower = p.name.toLowerCase();
+              return (
+                cleanMsg.includes(nameLower) ||
+                (nameLower.split(" ").length >= 2 &&
+                  cleanMsg.includes(nameLower.split(" ")[0]) &&
+                  cleanMsg.includes(nameLower.split(" ")[1]))
+              );
+            });
+            if (matchedProds.length === 1) {
+              targetProductIdForVariant = matchedProds[0].id;
+            } else if (isShortConfirmation || cleanMsg.includes("this") || cleanMsg.includes("it") || cleanMsg.includes("that") || cleanMsg.includes("item")) {
+              const historyText = sanitizedHistory.map((m) => m.content).join(" ").toLowerCase();
+              const histMatched = allProds.filter((p: any) => historyText.includes(p.name.toLowerCase()));
+              if (histMatched.length >= 1) {
+                targetProductIdForVariant = histMatched[0].id;
+              }
+            }
+          } catch (e) {
+            console.error("[AgentService] Catalog match lookup failed:", e);
+          }
+        }
+      }
+
+      if (targetProductIdForVariant) {
+        try {
+          const fullProd = await ProductService.getProductById(targetProductIdForVariant);
+          if (fullProd && fullProd.variants && fullProd.variants.length > 0) {
+            const executedAdd = actions.find(
+              (a) => a.tool === "add_to_cart" && a.status === "success"
+            );
+
+            if (!executedAdd) {
+              pendingAction = {
+                type: "SELECT_VARIANT",
+                productId: fullProd.id,
+                productName: fullProd.name,
+                variants: fullProd.variants.map((v) => ({
+                  id: v.id,
+                  name: v.name,
+                  sku: v.sku,
+                  price: v.price,
+                  stock: v.stock,
+                  attributes: v.attributes,
+                })),
+              };
+
+              // Ensure target product is in finalProducts so frontend receives attribution & price metadata
+              const existingInFinal = finalProducts.find((p) => p.id === fullProd.id);
+              if (!existingInFinal) {
+                const rp = resolvedProductsMap.get(fullProd.id);
+                finalProducts.push({
+                  id: fullProd.id,
+                  name: fullProd.name,
+                  brand: fullProd.brand,
+                  category: fullProd.category,
+                  price: fullProd.price,
+                  rating: fullProd.rating,
+                  imageUrl: fullProd.imageUrl,
+                  hasVariants: true,
+                  source: rp?.source || "recommendation",
+                  aiAttributionSource: rp?.aiAttributionSource || "AI_RECOMMENDATION",
+                  sourceEventId: rp?.sourceEventId,
+                  rank: undefined,
+                  score: undefined,
+                  label: undefined,
+                  reasons: undefined,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[AgentService] Failed to build SELECT_VARIANT pendingAction:", e);
+        }
       }
     }
 
