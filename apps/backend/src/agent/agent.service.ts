@@ -6,6 +6,7 @@ import { AgentHistoryMessage, ChatRequest, AgentAction, AgentTimings } from "./a
 import { CartService } from "../services/cart.service.js";
 import { ProductService } from "../services/product.service.js";
 import { AuditService } from "../audit/audit.service.js";
+import { prisma } from "../config/database.js";
 import { CommerceEventType, CommerceEventSource } from "../generated/prisma/index.js";
 
 export class AgentService {
@@ -150,6 +151,59 @@ export class AgentService {
           if (fullProduct) {
             const hasActiveVariants = fullProduct.variants && fullProduct.variants.length > 0;
 
+            // Server-validate AI attribution from recent audit events for this session
+            let validatedSource: "recommendation" | "upsell" | "cross-sell" | "accessory" | "direct" = "direct";
+            let validatedAiAttributionSource: "AI_RECOMMENDATION" | "AI_UPSELL" | "AI_CROSS_SELL" | "AI_ACCESSORY" | "DIRECT" = "DIRECT";
+            let validatedSourceEventId: string | undefined = undefined;
+
+            try {
+              const recentEvents = await prisma.commerceEvent.findMany({
+                where: {
+                  OR: [
+                    { cartId: cartId || undefined },
+                    { customerId: customerId || undefined },
+                  ].filter((c) => Object.values(c)[0] !== undefined),
+                  type: {
+                    in: [
+                      CommerceEventType.AI_RECOMMENDATION_RETURNED,
+                      CommerceEventType.UPSELL_SHOWN,
+                      CommerceEventType.CROSS_SELL_SHOWN,
+                      CommerceEventType.ACCESSORY_SHOWN,
+                    ],
+                  },
+                },
+                orderBy: { createdAt: "desc" },
+                take: 10,
+              });
+
+              for (const candidateEvent of recentEvents) {
+                let candidateAiSource: any = "AI_RECOMMENDATION";
+                if (candidateEvent.type === CommerceEventType.UPSELL_SHOWN) candidateAiSource = "AI_UPSELL";
+                else if (candidateEvent.type === CommerceEventType.CROSS_SELL_SHOWN) candidateAiSource = "AI_CROSS_SELL";
+                else if (candidateEvent.type === CommerceEventType.ACCESSORY_SHOWN) candidateAiSource = "AI_ACCESSORY";
+
+                const valResult = await AuditService.validateAttribution({
+                  customerId,
+                  cartId,
+                  productId: fullProduct.id,
+                  source: candidateAiSource,
+                  sourceEventId: candidateEvent.id,
+                });
+
+                if (valResult.valid && valResult.source !== "DIRECT" && valResult.sourceEventId) {
+                  validatedAiAttributionSource = candidateAiSource;
+                  validatedSource =
+                    candidateAiSource === "AI_UPSELL" ? "upsell" :
+                    candidateAiSource === "AI_CROSS_SELL" ? "cross-sell" :
+                    candidateAiSource === "AI_ACCESSORY" ? "accessory" : "recommendation";
+                  validatedSourceEventId = valResult.sourceEventId;
+                  break;
+                }
+              }
+            } catch (attrErr) {
+              console.error("[AgentService] Failed to validate attribution for explicit add fast path:", attrErr);
+            }
+
             const productCard = {
               id: fullProduct.id,
               name: fullProduct.name,
@@ -159,8 +213,9 @@ export class AgentService {
               rating: fullProduct.rating,
               imageUrl: fullProduct.imageUrl,
               hasVariants: hasActiveVariants,
-              source: "recommendation",
-              aiAttributionSource: "AI_RECOMMENDATION",
+              source: validatedSource,
+              aiAttributionSource: validatedAiAttributionSource,
+              sourceEventId: validatedSourceEventId,
             };
 
             if (hasActiveVariants) {
@@ -202,22 +257,10 @@ export class AgentService {
                 await CartService.addCartItem(cartId, {
                   productId: fullProduct.id,
                   quantity: 1,
+                  source: validatedAiAttributionSource === "DIRECT" ? undefined : (validatedAiAttributionSource as any),
+                  sourceEventId: validatedSourceEventId,
                 });
                 updatedCart = await CartService.getCart(cartId);
-
-                await AuditService.recordEvent({
-                  type: CommerceEventType.AI_ITEM_ADDED_TO_CART,
-                  source: CommerceEventSource.AI,
-                  merchantId: fullProduct.merchantId,
-                  customerId,
-                  cartId,
-                  productId: fullProduct.id,
-                  metadata: {
-                    productName: fullProduct.name,
-                    price: fullProduct.price,
-                    directBypass: true,
-                  },
-                });
               }
 
               return {
