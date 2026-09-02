@@ -108,6 +108,7 @@ async function runAttributionFastPathTests() {
 
       assert.strictEqual(resDirect.pendingAction?.type, "SELECT_VARIANT", "Direct add must return SELECT_VARIANT");
       assert(resDirect.pendingAction?.variants && Array.isArray(resDirect.pendingAction.variants), "pendingAction must use 'variants' array field");
+      assert(resDirect.products && resDirect.products.length > 0, "Direct add response must include resolved product");
       const directProdCard = resDirect.products[0];
       console.log("Direct add product card attribution:", {
         aiAttributionSource: directProdCard.aiAttributionSource,
