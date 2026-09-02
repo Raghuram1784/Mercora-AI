@@ -1,7 +1,7 @@
 import { groq } from "./groq.client.js";
 import { config } from "../config/env.js";
 import { SYSTEM_PROMPT } from "./prompts/system-prompt.js";
-import { getGroqToolsConfig, executeTool } from "./tool-registry.js";
+import { getGroqToolsConfig, getGroqToolsConfigForNames, getToolsForIntent, executeTool } from "./tool-registry.js";
 import { AgentHistoryMessage, ChatRequest, AgentAction, AgentTimings } from "./agent.types.js";
 import { CartService } from "../services/cart.service.js";
 import { ProductService } from "../services/product.service.js";
@@ -34,8 +34,8 @@ export class AgentService {
       }
     }
 
-    // 2. Enforce limits: max 10 history messages
-    let sanitizedHistory = history.slice(-10);
+    // 2. Enforce limits: max 6 history messages
+    let sanitizedHistory = history.slice(-6);
 
     // Remove duplicate trailing user message if history accidentally includes the current user message
     if (
@@ -95,7 +95,11 @@ export class AgentService {
 
     const isAuthorized = hasExplicitCartIntent || (isShortConfirmation && isRespondingToChoice);
 
-    // 4. Construct message payload for Groq
+    // 4. Intent-aware tool filtering
+    const allowedToolNames = getToolsForIntent(message, sanitizedHistory);
+    const allowedToolsConfig = getGroqToolsConfigForNames(allowedToolNames);
+
+    // 5. Construct message payload for Groq
     const currentMessages: any[] = [
       { role: "system", content: `${SYSTEM_PROMPT}\n\n[SESSION_CONTEXT]\n- Customer ID: ${customerId || "unknown"}\n- Active Cart ID: ${cartId || "unknown"}` },
       ...sanitizedHistory.map((m) => ({
@@ -137,14 +141,20 @@ export class AgentService {
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-          response = await groq.chat.completions.create({
+          const groqPayload: any = {
             model: config.GROQ_MODEL,
             messages: currentMessages,
-            tools: getGroqToolsConfig(),
-            tool_choice: "auto",
             temperature: 0.1,
-            max_tokens: 350,
-          });
+            max_tokens: 180,
+          };
+
+          // Expose tool schemas only on round 1 when tools can be selected
+          if (rounds === 1 && allowedToolsConfig.length > 0) {
+            groqPayload.tools = allowedToolsConfig;
+            groqPayload.tool_choice = "auto";
+          }
+
+          response = await groq.chat.completions.create(groqPayload);
           break;
         } catch (err: any) {
           const status = err?.status || err?.statusCode;
@@ -522,6 +532,26 @@ export class AgentService {
               status: "success",
               summary: `Executed ${name} successfully.`,
             });
+
+            // Terminal fast path for read-only product display tools
+            let fastPathMessage: string | null = null;
+            if (name === "recommend_products") {
+              fastPathMessage = "Here are the best matches based on your request. I've ranked them using Mercora's recommendation engine.";
+            } else if (name === "search_products") {
+              fastPathMessage = "Here are the matching products I found.";
+            } else if (name === "get_upsell_suggestions") {
+              fastPathMessage = "Here are the strongest upgrade options for this product.";
+            } else if (name === "get_cross_sell_suggestions") {
+              fastPathMessage = "Here are some complementary options that pair well with this product.";
+            }
+
+            if (fastPathMessage) {
+              currentMessages.push({
+                role: "assistant",
+                content: fastPathMessage,
+              });
+              break;
+            }
           } catch (err: any) {
             const toolDuration = performance.now() - toolStart;
             toolsMs[name] = (toolsMs[name] || 0) + toolDuration;
