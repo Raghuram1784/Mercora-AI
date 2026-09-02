@@ -95,6 +95,174 @@ export class AgentService {
 
     const isAuthorized = hasExplicitCartIntent || (isShortConfirmation && isRespondingToChoice);
 
+    // Timing instrumentation (development-only breakdown)
+    const startTime = performance.now();
+    let initialGroqMs = 0;
+    let finalGroqMs = 0;
+    const toolsMs: Record<string, number> = {};
+
+    // FAST PATH FOR EXPLICIT ADD-TO-CART (0 Groq Calls)
+    if (isAuthorized) {
+      console.log(`[AgentService] Fast-path explicit cart authorization triggered (0 Groq calls)`);
+
+      try {
+        const { products: allProds } = await ProductService.getProducts({ limit: 100, offset: 0 });
+
+        let targetProduct: any = null;
+
+        // 1. Direct name match in cleanMsg
+        const directMatches = allProds.filter((p: any) => {
+          const nameLower = p.name.toLowerCase();
+          return (
+            cleanMsg.includes(nameLower) ||
+            (nameLower.split(" ").length >= 2 &&
+              cleanMsg.includes(nameLower.split(" ")[0]) &&
+              cleanMsg.includes(nameLower.split(" ")[1]))
+          );
+        });
+
+        if (directMatches.length === 1) {
+          targetProduct = directMatches[0];
+        }
+
+        // 2. Context / History match if demonstrative pronoun or short confirmation
+        if (!targetProduct && (isShortConfirmation || cleanMsg.includes("this") || cleanMsg.includes("it") || cleanMsg.includes("that") || cleanMsg.includes("item"))) {
+          const historyText = sanitizedHistory.map((m) => m.content).join(" ").toLowerCase();
+          const histMatches = allProds.filter((p: any) => historyText.includes(p.name.toLowerCase()));
+          if (histMatches.length >= 1) {
+            targetProduct = histMatches[0];
+          }
+        }
+
+        // 3. Match individual product words in cleanMsg if 1 product matches best
+        if (!targetProduct) {
+          const partialMatches = allProds.filter((p: any) => {
+            const words = p.name.toLowerCase().split(" ").filter((w: string) => w.length > 3);
+            return words.some((w: string) => cleanMsg.includes(w));
+          });
+          if (partialMatches.length === 1) {
+            targetProduct = partialMatches[0];
+          }
+        }
+
+        if (targetProduct) {
+          const fullProduct = await ProductService.getProductById(targetProduct.id);
+          if (fullProduct) {
+            const hasActiveVariants = fullProduct.variants && fullProduct.variants.length > 0;
+
+            const productCard = {
+              id: fullProduct.id,
+              name: fullProduct.name,
+              brand: fullProduct.brand,
+              category: fullProduct.category,
+              price: fullProduct.price,
+              rating: fullProduct.rating,
+              imageUrl: fullProduct.imageUrl,
+              hasVariants: hasActiveVariants,
+              source: "recommendation",
+              aiAttributionSource: "AI_RECOMMENDATION",
+            };
+
+            if (hasActiveVariants) {
+              return {
+                message: `Please select a variant for ${fullProduct.name}.`,
+                actions: [
+                  {
+                    tool: "get_product_details",
+                    status: "success",
+                    summary: `Loaded product variants for ${fullProduct.name}`,
+                  },
+                ],
+                products: [productCard],
+                pendingAction: {
+                  type: "SELECT_VARIANT",
+                  productId: fullProduct.id,
+                  productName: fullProduct.name,
+                  availableVariants: fullProduct.variants.map((v: any) => ({
+                    id: v.id,
+                    name: v.name,
+                    sku: v.sku,
+                    price: v.price,
+                    stock: v.stock,
+                    attributes: v.attributes,
+                  })),
+                },
+                timings: {
+                  initialGroqMs: 0,
+                  toolsMs: {},
+                  totalToolsMs: 0,
+                  finalGroqMs: 0,
+                  totalMs: Number((performance.now() - startTime).toFixed(1)),
+                },
+              };
+            } else {
+              // Direct cart addition for items without variants
+              let updatedCart: any = null;
+              if (cartId) {
+                await CartService.addCartItem(cartId, {
+                  productId: fullProduct.id,
+                  quantity: 1,
+                });
+                updatedCart = await CartService.getCart(cartId);
+
+                await AuditService.recordEvent({
+                  type: CommerceEventType.AI_ITEM_ADDED_TO_CART,
+                  source: CommerceEventSource.AI,
+                  merchantId: fullProduct.merchantId,
+                  customerId,
+                  cartId,
+                  productId: fullProduct.id,
+                  metadata: {
+                    productName: fullProduct.name,
+                    price: fullProduct.price,
+                    directBypass: true,
+                  },
+                });
+              }
+
+              return {
+                message: `${fullProduct.name} has been added to your cart.`,
+                actions: [
+                  {
+                    tool: "add_to_cart",
+                    status: "success",
+                    summary: `Added ${fullProduct.name} to cart`,
+                  },
+                ],
+                products: [productCard],
+                pendingAction: null,
+                cart: updatedCart ? {
+                  id: updatedCart.id,
+                  status: updatedCart.status,
+                  items: updatedCart.items.map((item: any) => ({
+                    id: item.id,
+                    productId: item.product.id,
+                    productName: item.product.name,
+                    variantId: item.variant?.id || null,
+                    variantName: item.variant?.name || null,
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                    lineTotal: item.lineTotal,
+                    available: item.availability.available,
+                  })),
+                  summary: updatedCart.summary,
+                } : null,
+                timings: {
+                  initialGroqMs: 0,
+                  toolsMs: {},
+                  totalToolsMs: 0,
+                  finalGroqMs: 0,
+                  totalMs: Number((performance.now() - startTime).toFixed(1)),
+                },
+              };
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error("[AgentService] Fast-path explicit add resolution error:", err);
+      }
+    }
+
     // 4. Intent-aware tool filtering
     const allowedToolNames = getToolsForIntent(message, sanitizedHistory);
     const allowedToolsConfig = getGroqToolsConfigForNames(allowedToolNames);
@@ -117,12 +285,6 @@ export class AgentService {
     let attemptedProductId: string | null = null;
     let pendingAction: any = null;
     let cartData: any = null;
-
-    // Timing instrumentation (development-only breakdown)
-    const startTime = performance.now();
-    let initialGroqMs = 0;
-    let finalGroqMs = 0;
-    const toolsMs: Record<string, number> = {};
 
     let rounds = 0;
     const maxRounds = 4;
@@ -163,7 +325,6 @@ export class AgentService {
           const shouldRetry = (isRateLimit || isTransient5xx) && attempt < MAX_RETRIES;
 
           if (shouldRetry) {
-            // Increasing delay with exponential backoff + jitter, capped
             const exponentialDelay = BASE_DELAY_MS * Math.pow(2, attempt);
             const jitter = Math.floor(Math.random() * 500);
             const delay = Math.min(exponentialDelay + jitter, MAX_DELAY_MS);
@@ -173,7 +334,6 @@ export class AgentService {
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
           } else {
-            // Non-transient client errors (400, 401, 403, 404) or exhausted retries fail fast
             console.error(
               `[AgentService] Unretryable Groq error (status: ${status}): ${err.message}`
             );
@@ -533,7 +693,7 @@ export class AgentService {
               summary: `Executed ${name} successfully.`,
             });
 
-            // Terminal fast path for read-only product display tools
+            // Terminal fast path for read-only product display tools (TRULY TERMINAL RETURN)
             let fastPathMessage: string | null = null;
             if (name === "recommend_products") {
               fastPathMessage = "Here are the best matches based on your request. I've ranked them using Mercora's recommendation engine.";
@@ -546,11 +706,45 @@ export class AgentService {
             }
 
             if (fastPathMessage) {
-              currentMessages.push({
-                role: "assistant",
-                content: fastPathMessage,
-              });
-              break;
+              const rawCandidateList = Array.from(resolvedProductsMap.values()).slice(0, 6);
+              const finalProducts = await Promise.all(
+                rawCandidateList.map(async (rp) => ({
+                  id: rp.id,
+                  name: rp.name,
+                  brand: rp.brand,
+                  category: rp.category,
+                  price: rp.price,
+                  rating: rp.rating,
+                  imageUrl: rp.imageUrl,
+                  hasVariants: Boolean(rp.hasVariants),
+                  source: rp.source,
+                  aiAttributionSource: rp.aiAttributionSource,
+                  sourceEventId: rp.sourceEventId,
+                  rank: rp.rank,
+                  score: rp.score,
+                  label: rp.label,
+                  reasons: rp.reasons,
+                }))
+              );
+
+              const totalToolsMs = Object.values(toolsMs).reduce((sum, v) => sum + v, 0);
+
+              return {
+                message: fastPathMessage,
+                actions,
+                products: finalProducts,
+                pendingAction: null,
+                cart: cartData,
+                timings: {
+                  initialGroqMs: Number(initialGroqMs.toFixed(1)),
+                  toolsMs: Object.fromEntries(
+                    Object.entries(toolsMs).map(([k, v]) => [k, Number(v.toFixed(1))])
+                  ),
+                  totalToolsMs: Number(totalToolsMs.toFixed(1)),
+                  finalGroqMs: 0,
+                  totalMs: Number((performance.now() - startTime).toFixed(1)),
+                },
+              };
             }
           } catch (err: any) {
             const toolDuration = performance.now() - toolStart;
