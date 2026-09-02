@@ -55,9 +55,7 @@ export class AgentService {
     const hasExplicitCartIntent = 
       /\b(add|adds|adding|cart)\b/i.test(cleanMsg) ||
       (cleanMsg.includes("put") && (cleanMsg.includes("in") || cleanMsg.includes("into"))) ||
-      cleanMsg.includes("go ahead and add") ||
-      cleanMsg.includes("buy this") ||
-      cleanMsg.includes("buy the");
+      cleanMsg.includes("go ahead and add");
 
     // Short confirmation answers (valid ONLY when responding to prior assistant choice/confirmation prompt)
     const isShortConfirmation =

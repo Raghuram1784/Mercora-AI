@@ -1,6 +1,88 @@
 import { AgentService } from "../apps/backend/src/agent/agent.service.js";
+import { groq } from "../apps/backend/src/agent/groq.client.js";
 import { prisma } from "../apps/backend/src/config/database.js";
 import assert from "node:assert";
+
+// Mock Groq API calls to prevent TPD rate limit errors during intent gate regression testing
+const originalCreate = groq.chat.completions.create.bind(groq.chat.completions);
+(groq.chat.completions as any).create = async (params: any) => {
+  const lastMsg = params.messages[params.messages.length - 1];
+  const content = (lastMsg?.content || "").toLowerCase();
+
+  // If previous turn was a tool output, return assistant completion
+  if (lastMsg?.role === "tool") {
+    return {
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "Here are the details for your request.",
+          },
+        },
+      ],
+    };
+  }
+
+  // Explicit add / cart queries -> call search_products or get_product_details
+  if (content.includes("add") || content.includes("cart")) {
+    return {
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: "call_mock_get",
+                type: "function",
+                function: {
+                  name: "get_product_details",
+                  arguments: JSON.stringify({ productId: "bffa036f-2810-402b-9f59-ec605936056f" }),
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+  }
+
+  // Recommendation / advice / discovery queries -> call recommend_products
+  if (content.includes("recommend") || content.includes("buy") || content.includes("get") || content.includes("take") || content.includes("headphone")) {
+    return {
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: "call_mock_rec",
+                type: "function",
+                function: {
+                  name: "recommend_products",
+                  arguments: JSON.stringify({ category: "Headphones" }),
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+  }
+
+  // Conversational / affirmative answers
+  return {
+    choices: [
+      {
+        message: {
+          role: "assistant",
+          content: "Understood. How else can I assist you?",
+        },
+      },
+    ],
+  };
+};
 
 async function runIntentGateTests() {
   console.log("==================================================");
@@ -152,8 +234,58 @@ async function runIntentGateTests() {
     assert.strictEqual(res8.pendingAction?.type, "SELECT_VARIANT", "TEST 8 FAIL: pendingAction type must be SELECT_VARIANT");
     console.log("✅ TEST 8 PASS: Contextual 'yes' authorized variant selection");
 
+    // -------------------------------------------------------------
+    // TEST 9: "Should I buy the Travel Headphones?"
+    // -------------------------------------------------------------
+    console.log("\n--- TEST 9: 'Should I buy the Travel Headphones?' advice query ---");
+    const res9 = await AgentService.processMessage({
+      ...reqBase,
+      message: "Should I buy the Travel Headphones?",
+      history: [],
+    });
+
+    const addActions9 = res9.actions.filter((a) => a.tool === "add_to_cart" && a.status === "success");
+    assert.strictEqual(addActions9.length, 0, "TEST 9 FAIL: add_to_cart must NOT succeed on advice query");
+    assert.strictEqual(res9.pendingAction, null, "TEST 9 FAIL: pendingAction must be null for 'Should I buy the Travel Headphones?'");
+    console.log("✅ TEST 9 PASS: 'Should I buy the Travel Headphones?' returned advice only without modal/cart mutation");
+
+    // -------------------------------------------------------------
+    // TEST 10: "Should I buy this?" with previous recommendation context
+    // -------------------------------------------------------------
+    console.log("\n--- TEST 10: 'Should I buy this?' advice query with prior context ---");
+    const res10 = await AgentService.processMessage({
+      ...reqBase,
+      message: "Should I buy this?",
+      history: [
+        { role: "user", content: "Which headphones should I buy under ₹5000 for travel?" },
+        { role: "assistant", content: "I recommend the Travel Headphones for ₹3,499." },
+      ],
+    });
+
+    const addActions10 = res10.actions.filter((a) => a.tool === "add_to_cart" && a.status === "success");
+    assert.strictEqual(addActions10.length, 0, "TEST 10 FAIL: add_to_cart must NOT succeed on 'Should I buy this?'");
+    assert.strictEqual(res10.pendingAction, null, "TEST 10 FAIL: pendingAction must be null for 'Should I buy this?'");
+    console.log("✅ TEST 10 PASS: 'Should I buy this?' with prior context returned advice only without modal/cart mutation");
+
+    // -------------------------------------------------------------
+    // TEST 11: Explicit "Add the Travel Headphones to my cart"
+    // -------------------------------------------------------------
+    console.log("\n--- TEST 11: Explicit add command after advice query ---");
+    const res11 = await AgentService.processMessage({
+      ...reqBase,
+      message: "Add the Travel Headphones to my cart",
+      history: [
+        { role: "user", content: "Should I buy the Travel Headphones?" },
+        { role: "assistant", content: res9.message },
+      ],
+    });
+
+    assert.notStrictEqual(res11.pendingAction, null, "TEST 11 FAIL: pendingAction must be returned for explicit add command");
+    assert.strictEqual(res11.pendingAction?.type, "SELECT_VARIANT", "TEST 11 FAIL: pendingAction type must be SELECT_VARIANT");
+    console.log("✅ TEST 11 PASS: Explicit add command after advice query returned SELECT_VARIANT pendingAction");
+
     console.log("\n==================================================");
-    console.log("  ALL AGENT INTENT GATE TESTS PASSED (8/8)       ");
+    console.log("  ALL AGENT INTENT GATE TESTS PASSED (11/11)     ");
     console.log("==================================================");
   } finally {
     // Clean up temporary test cart
