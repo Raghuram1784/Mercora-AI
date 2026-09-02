@@ -26,7 +26,7 @@
 
 ## 🎥 5-Minute Pitch Video
 
-**Razorpay AI Buildathon Pitch Video:** `PITCH_VIDEO_LINK_PENDING`
+**Razorpay AI Buildathon Pitch Video:** Submitted separately through the official Razorpay submission form.
 
 > The final 5-minute walkthrough demonstrates the live customer journey, bounded agent behavior, deterministic recommendation and variant safety, Razorpay Test Mode payment, server-side payment verification, graceful failure handling, AI-assisted revenue attribution and the merchant audit trail.
 
